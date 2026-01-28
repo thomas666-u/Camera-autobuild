@@ -2,7 +2,7 @@ name: Build and Deploy
 
 on:
   schedule:
-    - cron: '0 5 * * 0'  # 仅周日凌晨5点触发
+    - cron: '0 */6 * * *'  # 6h/次
   push:
     branches: [main]
   pull_request:
@@ -19,16 +19,8 @@ jobs:
 
       # 克隆上游仓库（保持与上游同步的关键修改）
       - name: Clone Upstream Repository
-        run: git clone --branch master https://github.com/PlayPro/CoreProtect ./external-coreprotect
+        run: git clone --branch master https://github.com/wiyuka0/Camera ./external-
 
-      # 修改上游的 pom.xml
-      - name: Patch pom.xml
-        working-directory: ./external-coreprotect
-        run: |
-          # 修改版本号和分支参数
-          sed -i '5s|<version>[^<]*</version>|<version>23.4-dev</version>|' pom.xml
-          sed -i '7s|<project.branch></project.branch>|<project.branch>development</project.branch>|' pom.xml
-          cat pom.xml  # 验证修改
 
       # 设置 Java 环境
       - name: Set up JDK 21
@@ -42,13 +34,13 @@ jobs:
         uses: actions/cache@v4  # 升级到 v4
         with:
           path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('external-coreprotect/pom.xml') }}
+          key: ${{ runner.os }}-m2-${{ hashFiles('external-/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
 
       # Maven 构建
       - name: Build with Maven
         run: mvn -B verify
-        working-directory: ./external-coreprotect
+        working-directory: ./external-
 
       # 设置日期和短 SHA 作为标签名
       - name: Set date and short sha as tag name
@@ -61,11 +53,11 @@ jobs:
       # 构建后的验证步骤（精确检查两个文件）
       - name: Verify Artifacts
         run: |
-          ls -la ./external-coreprotect/target/
+          ls -la ./external-/target/
           
           # 检查核心文件是否存在（泛匹配 CoreProtect-x.x.jar）
-          if ! ls ./external-coreprotect/target/CoreProtect-*.jar; then
-            echo "::error::CoreProtect-*.jar not found"
+          if ! ls ./external-/target/*.jar; then
+            echo "::error::*.jar not found"
             exit 1
           fi
 
@@ -78,4 +70,4 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           automatic_release_tag: ${{ env.TAG_NAME }}
           prerelease: false
-          files: ./external-coreprotect/target/*.jar
+          files: ./external-/target/*.jar
