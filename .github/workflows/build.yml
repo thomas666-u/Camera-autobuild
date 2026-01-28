@@ -1,8 +1,8 @@
-name: Build and Deploy
+name: Build and Deploy TrMenu
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # 6h/次
+    - cron: '0 */6 * * *'   #每6小时一次
   push:
     branches: [main]
   pull_request:
@@ -13,61 +13,88 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 发布所需的权限
+      contents: write  # 确保有写入权限
 
     steps:
+      # 步骤1: 检出当前仓库
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 克隆上游仓库（保持与上游同步的关键修改）
-      - name: Clone Upstream Repository
-        run: git clone --branch master https://github.com/wiyuka0/Camera ./external-
+      # 步骤2: 克隆 TrMenu 仓库
+      - name: Clone TrMenu Repository
+        run: git clone https://github.com/wiyuka0/PhyModels.git ./trmenu-source
 
-
-      # 设置 Java 环境
-      - name: Set up JDK 21
+      # 步骤3: 设置 Java 环境
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
-          distribution: 'temurin'
+          distribution: temurin
+          java-version: 21
 
-      # Maven 依赖缓存（路径与上游统一）
-      - name: Cache Maven packages
-        uses: actions/cache@v4  # 升级到 v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('external-/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2-
+      # 步骤4: 设置 Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      # Maven 构建
-      - name: Build with Maven
-        run: mvn -B verify
-        working-directory: ./external-
+      # 步骤5: 使 Gradle Wrapper 可执行
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x ./trmenu-source/gradlew
 
-      # 设置日期和短 SHA 作为标签名
-      - name: Set date and short sha as tag name
+      # 步骤6: 构建 TrMenu
+      - name: Build TrMenu
+        run: ./gradlew build
+        working-directory: ./trmenu-source
+
+      # 步骤7: 设置日期作为标签名
+      - name: Set date as tag name
         id: set_tag
         run: |
-          DATE=$(date +'%y%m%d-%H%M')  # 修改日期格式为 yyMMdd-HHmm
-          echo "TAG_NAME=build-$DATE" >> $GITHUB_ENV  # 添加前缀 build-
+          DATE=$(date +'%Y%m%d-%H%M%S')  # 使用更精确的时间格式，包含秒
+          echo "TAG_NAME=trmenu-build-$DATE" >> $GITHUB_ENV
           echo "Generated Tag: ${{ env.TAG_NAME }}"
 
-      # 构建后的验证步骤（精确检查两个文件）
+      # 步骤8: 验证构建产物
       - name: Verify Artifacts
         run: |
-          ls -la ./external-/target/
+          ls -la ./trmenu-source/build/libs/
           
-          # 检查核心文件是否存在（泛匹配 CoreProtect-x.x.jar）
-          if ! ls ./external-/target/*.jar; then
-            echo "::error::*.jar not found"
+          # 检查构建产物是否存在
+          if ! ls ./trmenu-source/build/libs/*.jar 1> /dev/null 2>&1; then
+            echo "::error::No JAR files found in trmenu-source/build/libs/"
             exit 1
           fi
 
-          echo "Required JAR files exist"
+          echo "TrMenu build artifacts verified successfully"
 
-      # 发布文件
-      - name: Auto Release
-        uses: marvinpinto/action-automatic-releases@latest
+      # 步骤9: 上传构建产物到 Artifacts
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          automatic_release_tag: ${{ env.TAG_NAME }}
+          name: TrMenu Artifacts
+          path: trmenu-source/build/libs/*.jar
+          retention-days: 30
+
+      # 步骤10: 创建 Git 标签
+      - name: Create Git Tag
+        if: github.event_name != 'pull_request'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a "${{ env.TAG_NAME }}" -m "Automated build ${{ env.TAG_NAME }}"
+          git push origin "${{ env.TAG_NAME }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 步骤11: 创建 Release
+      - name: Create Release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: "TrMenu Build ${{ env.TAG_NAME }}"
+          body: "Automated build of X"
+          files: trmenu-source/build/libs/*.jar
           prerelease: false
-          files: ./external-/target/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
